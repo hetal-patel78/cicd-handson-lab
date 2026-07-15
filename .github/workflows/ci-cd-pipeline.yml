@@ -399,15 +399,23 @@ jobs:
       - name: Pre-create VPC and Subnets
         run: |
           echo "🔧 Creating VPC..."
-          aws --endpoint-url=http://localhost:4566 ec2 create-vpc \
-            --cidr-block 10.0.0.0/16 --region us-east-1 > /dev/null
+          VPC_ID=$(aws --endpoint-url=http://localhost:4566 ec2 create-vpc \
+            --cidr-block 10.0.0.0/16 --region us-east-1 \
+            --query 'Vpc.VpcId' --output text)
+          echo "VPC ID: $VPC_ID"
           echo "🔧 Creating subnet..."
-          aws --endpoint-url=http://localhost:4566 ec2 create-subnet \
-            --cidr-block 10.0.1.0/24 --vpc-id vpc-00000000 --region us-east-1 > /dev/null
-          echo "✅ VPC/subnet ready"
+          SUBNET_ID=$(aws --endpoint-url=http://localhost:4566 ec2 create-subnet \
+            --cidr-block 10.0.1.0/24 --vpc-id "$VPC_ID" --region us-east-1 \
+            --query 'Subnet.SubnetId' --output text)
+          echo "Subnet ID: $SUBNET_ID"
+          echo "$VPC_ID" > /tmp/vpc_id.txt
+          echo "$SUBNET_ID" > /tmp/subnet_id.txt
+          echo "✅ VPC/Subnet ready"
 
       - name: Deploy CloudFormation Stack
         run: |
+          VPC_ID=$(cat /tmp/vpc_id.txt)
+          SUBNET_ID=$(cat /tmp/subnet_id.txt)
           echo "🚀 Deploying CloudFormation stack: MySubscriptionService-ci"
           aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
             --stack-name MySubscriptionService-ci \
@@ -417,8 +425,8 @@ jobs:
               ParameterKey=ImageVersion,ParameterValue=${{ needs.version.outputs.imageTag || 'latest' }} \
               ParameterKey=DesiredCount,ParameterValue=1 \
               ParameterKey=MaximumCount,ParameterValue=2 \
-              ParameterKey=VpcId,ParameterValue=vpc-00000000 \
-              ParameterKey=SubnetIds,ParameterValue=subnet-00000000 \
+              ParameterKey=VpcId,ParameterValue="$VPC_ID" \
+              ParameterKey=SubnetIds,ParameterValue="$SUBNET_ID" \
               ParameterKey=HostedZoneId,ParameterValue=Z00000000000000000000 \
             --capabilities CAPABILITY_NAMED_IAM \
             --region us-east-1
