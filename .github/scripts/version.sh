@@ -29,7 +29,7 @@ echo "artifactVersion=$SEMVER"
 echo "imageVersion=$SEMVER"
 
 # Docker image name (includes registry path)
-echo "imageName=mycompany.artifactory.io/my-subscription-service"
+echo "imageName=ghcr.io/hetal-patel78/my-subscription-service"
 
 # Build number (used by Octopus to identify the build)
 echo "buildNumber=$SEMVER+${GITHUB_RUN_NUMBER:-0}"

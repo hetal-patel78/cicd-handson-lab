@@ -97,7 +97,7 @@ Resources:
       TaskRoleArn: !Ref ServiceTaskRole
       ContainerDefinitions:
         - Name: subscription-service
-          Image: !Sub "mycompany.artifactory.io/my-subscription-service:${ImageVersion}"
+          Image: !Sub "ghcr.io/hetal-patel78/my-subscription-service:${ImageVersion}"
           Essential: true
           PortMappings:
             - ContainerPort: 80
@@ -234,7 +234,7 @@ Resources:
       TaskRoleArn: !Ref ScheduledJobTaskRole
       ContainerDefinitions:
         - Name: scheduled-job-host
-          Image: !Sub "mycompany.artifactory.io/my-subscription-service-scheduled-job:${ImageVersion}"
+          Image: !Sub "ghcr.io/hetal-patel78/my-subscription-service-scheduled-job:${ImageVersion}"
           Essential: true
           LogConfiguration:
             LogDriver: awslogs

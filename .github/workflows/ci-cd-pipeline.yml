@@ -26,7 +26,7 @@ concurrency:
 env:
   DOTNET_VERSION: '8.0.x'
   BUILD_CONFIGURATION: 'Release'
-  DOCKER_REGISTRY: 'mycompany.artifactory.io'
+  DOCKER_REGISTRY: 'ghcr.io'
   IMAGE_NAME: 'my-subscription-service'
 
 # ──────────────────────────────────────────────────────────────
@@ -307,19 +307,21 @@ jobs:
 
       - name: Build Docker Image
         run: |
-          docker build -t ${{ env.IMAGE_NAME }}:${{ needs.version.outputs.imageTag }} .
+          TAG="${{ needs.version.outputs.imageTag }}"
+          if [ -z "$TAG" ]; then TAG="latest"; fi
+          echo "Building image: ${{ env.IMAGE_NAME }}:$TAG"
+          docker build -t ${{ env.IMAGE_NAME }}:$TAG .
 
-      - name: Push Docker Image to Artifactory
+      - name: Push Docker Image to GitHub Container Registry
         run: |
-          if [ -z "${{ secrets.ARTIFACTORY_USERNAME }}" ] || [ -z "${{ secrets.ARTIFACTORY_TOKEN }}" ]; then
-            echo "⚠️ No Artifactory credentials configured. Skipping push."
-            exit 0
-          fi
-          echo "${{ secrets.ARTIFACTORY_TOKEN }}" | docker login ${{ env.DOCKER_REGISTRY }} \
-            -u "${{ secrets.ARTIFACTORY_USERNAME }}" --password-stdin
-          docker tag ${{ env.IMAGE_NAME }}:${{ needs.version.outputs.imageTag }} \
-            ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.imageTag }}
-          docker push ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.imageTag }}
+          TAG="${{ needs.version.outputs.imageTag }}"
+          if [ -z "$TAG" ]; then TAG="latest"; fi
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io \
+            -u ${{ github.actor }} --password-stdin
+          docker tag ${{ env.IMAGE_NAME }}:$TAG \
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:$TAG
+          docker push ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:$TAG
+          echo "✅ Image pushed to ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:$TAG"
 
   # ── JOB 9: Create Octopus Release (push only) ──────────────
   # Creates releases in Octopus Deploy. Which channel depends
