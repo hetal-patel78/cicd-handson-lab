@@ -242,8 +242,11 @@ jobs:
           merge-multiple: true
 
       - name: Begin SonarCloud Scan
-        if: secrets.SONAR_TOKEN != ''
         run: |
+          if [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
+            echo "⚠️ SONAR_TOKEN not set. Skipping SonarCloud analysis."
+            exit 0
+          fi
           dotnet tool install --global dotnet-sonarscanner
           dotnet sonarscanner begin \
             /k:"mycompany_my-subscription-service" \
@@ -253,12 +256,19 @@ jobs:
             /d:sonar.qualitygate.wait=true
 
       - name: Build for Sonar
-        if: secrets.SONAR_TOKEN != ''
-        run: dotnet build src/MySubscriptionService.sln --configuration ${{ env.BUILD_CONFIGURATION }}
+        run: |
+          if [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
+            echo "⚠️ Skipping SonarCloud build step."
+            exit 0
+          fi
+          dotnet build src/MySubscriptionService.sln --configuration ${{ env.BUILD_CONFIGURATION }}
 
       - name: End SonarCloud Scan
-        if: secrets.SONAR_TOKEN != ''
-        run: dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+        run: |
+          if [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
+            exit 0
+          fi
+          dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
 
   # ── JOB 7: Auto-Approve PR (PR only) ────────────────────────
   # Only runs on pull requests from allowed branches.
