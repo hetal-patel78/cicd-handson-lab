@@ -7,7 +7,8 @@
 # pre-release version (e.g., 1.2.3-feature-branch.4+5).
 # In your company, this feeds the version.sh script which produces
 # fileVersion, artifactVersion, imageVersion, imageName.
-mode: ContinuousDeployment
+mode: ContinuousDelivery
+next-version: 1.0.0
 
 # Branch-specific rules control how versions are calculated
 # depending on whether you're on main, a feature branch, etc.
@@ -15,15 +16,14 @@ branches:
   main:
     regex: ^main$
     increment: patch        # main bumps the patch digit
-    source-branches: ['feature', 'develop']
-    tracks-release-candidates: true
+    source-branches: ['feature']
+    is-mainline: true
 
   feature:
     regex: ^feature/[-_A-Za-z0-9]+$
     increment: Minor        # Feature branches bump minor
     source-branches: ['main']
-    tag: feature            # Produces: 1.2.3-feature.1+0
+    tag: useBranchName
 
-# Prevent GitVersion from matching non-standard branch names
 ignore:
   sha: []

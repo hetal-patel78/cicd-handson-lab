@@ -43,7 +43,7 @@ jobs:
   version:
     runs-on: ubuntu-latest
     outputs:
-      semVer: ${{ steps.gitversion.outputs.semVer }}
+      semVer: ${{ steps.set_version.outputs.semVer }}
       imageTag: ${{ steps.set_version.outputs.imageTag }}
       buildNumber: ${{ steps.set_version.outputs.buildNumber }}
     steps:
@@ -56,21 +56,28 @@ jobs:
         uses: gittools/actions/gitversion/setup@v0.10.2
         with:
           versionSpec: '5.x'
+        continue-on-error: true
 
       - name: Determine Version
         id: gitversion
         uses: gittools/actions/gitversion/execute@v0.10.2
         with:
-          useConfigFile: true  # Uses GitVersion.yml at repo root
+          useConfigFile: true
+        continue-on-error: true
 
       - name: Set Version Outputs
         id: set_version
         run: |
-          echo "imageTag=${{ steps.gitversion.outputs.semVer }}" >> $GITHUB_OUTPUT
-          echo "buildNumber=${{ steps.gitversion.outputs.semVer }}+${{ github.run_number }}" >> $GITHUB_OUTPUT
-
-      # In your company, this also pushes build metadata to Octopus
-      # so Octopus knows a build with this version exists.
+          if [ -n "${{ steps.gitversion.outputs.semVer }}" ]; then
+            echo "semVer=${{ steps.gitversion.outputs.semVer }}" >> $GITHUB_OUTPUT
+            echo "imageTag=${{ steps.gitversion.outputs.semVer }}" >> $GITHUB_OUTPUT
+            echo "buildNumber=${{ steps.gitversion.outputs.semVer }}+${{ github.run_number }}" >> $GITHUB_OUTPUT
+          else
+            echo "semVer=1.0.0-ci.${{ github.run_number }}" >> $GITHUB_OUTPUT
+            echo "imageTag=1.0.0-ci.${{ github.run_number }}" >> $GITHUB_OUTPUT
+            echo "buildNumber=1.0.0-ci.${{ github.run_number }}" >> $GITHUB_OUTPUT
+            echo "⚠️ GitVersion failed, using fallback version"
+          fi
 
   # ── JOB 2: Application Build ────────────────────────────────
   # Compiles .NET, packages output, builds NuGet, uploads artifacts.
