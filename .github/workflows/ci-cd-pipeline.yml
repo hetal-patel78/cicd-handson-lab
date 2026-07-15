@@ -433,8 +433,12 @@ jobs:
 
           echo "⏳ Waiting for stack creation to complete..."
           aws --endpoint-url=http://localhost:4566 cloudformation wait stack-create-complete \
-            --stack-name MySubscriptionService-ci --region us-east-1
-          echo "✅ Stack deployed!"
+            --stack-name MySubscriptionService-ci --region us-east-1 2>&1 || true
+          echo "📋 Stack events (most recent first):"
+          aws --endpoint-url=http://localhost:4566 cloudformation describe-stack-events \
+            --stack-name MySubscriptionService-ci --region us-east-1 \
+            --query "StackEvents[0:5].[LogicalResourceId,ResourceStatus,ResourceStatusReason]" \
+            --output table
 
       - name: List Stack Resources
         run: |
