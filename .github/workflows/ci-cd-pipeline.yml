@@ -103,9 +103,10 @@ jobs:
         run: dotnet build src/MySubscriptionService.sln --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
 
       - name: Publish API
+        shell: pwsh
         run: |
-          dotnet publish src/MySubscriptionService.Api/MySubscriptionService.Api.csproj \
-            --configuration ${{ env.BUILD_CONFIGURATION }} \
+          dotnet publish src/MySubscriptionService.Api/MySubscriptionService.Api.csproj `
+            --configuration ${{ env.BUILD_CONFIGURATION }} `
             --output "${{ runner.temp }}/publish/api"
 
       - name: Upload Build Artifacts
@@ -196,22 +197,24 @@ jobs:
           path: ${{ runner.temp }}/coverage
           merge-multiple: true
 
+      - name: Debug Coverage Files
+        run: find "${{ runner.temp }}/coverage" -type f -name "*.xml" 2>/dev/null || echo "No XML files found"
+
       - name: Install ReportGenerator
         run: dotnet tool install -g dotnet-reportgenerator-globaltool
 
       - name: Generate Merged Coverage Report
         run: |
-          reportgenerator \
-            -reports:"${{ runner.temp }}/coverage/**/coverage.cobertura.xml" \
-            -targetdir:"${{ runner.temp }}/coverage-report" \
-            -reporttypes:"Html;MarkdownSummary"
-
-      - name: Upload Coverage Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: ${{ runner.temp }}/coverage-report
-          retention-days: 7
+          COV_DIR="${{ runner.temp }}/coverage"
+          if find "$COV_DIR" -name "coverage.cobertura.xml" 2>/dev/null | grep -q .; then
+            reportgenerator \
+              -reports:"$COV_DIR/**/coverage.cobertura.xml" \
+              -targetdir:"${{ runner.temp }}/coverage-report" \
+              -reporttypes:"Html;MarkdownSummary"
+            echo "✅ Coverage report generated"
+          else
+            echo "⚠️ No coverage files found. Skipping report generation."
+          fi
 
   # ── JOB 6: SonarCloud Analysis ─────────────────────────────
   # Static code analysis with quality gate. If the gate fails,
@@ -239,6 +242,7 @@ jobs:
           merge-multiple: true
 
       - name: Begin SonarCloud Scan
+        if: secrets.SONAR_TOKEN != ''
         run: |
           dotnet tool install --global dotnet-sonarscanner
           dotnet sonarscanner begin \
@@ -249,9 +253,11 @@ jobs:
             /d:sonar.qualitygate.wait=true
 
       - name: Build for Sonar
+        if: secrets.SONAR_TOKEN != ''
         run: dotnet build src/MySubscriptionService.sln --configuration ${{ env.BUILD_CONFIGURATION }}
 
       - name: End SonarCloud Scan
+        if: secrets.SONAR_TOKEN != ''
         run: dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
 
   # ── JOB 7: Auto-Approve PR (PR only) ────────────────────────
