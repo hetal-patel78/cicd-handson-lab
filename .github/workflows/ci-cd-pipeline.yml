@@ -104,8 +104,8 @@ jobs:
 
       - name: Publish API
         run: |
-          dotnet publish src/MySubscriptionService.Api/MySubscriptionService.Api.csproj `
-            --configuration ${{ env.BUILD_CONFIGURATION }} `
+          dotnet publish src/MySubscriptionService.Api/MySubscriptionService.Api.csproj \
+            --configuration ${{ env.BUILD_CONFIGURATION }} \
             --output "${{ runner.temp }}/publish/api"
 
       - name: Upload Build Artifacts
@@ -136,10 +136,10 @@ jobs:
 
       - name: Run Unit Tests with Coverage
         run: |
-          dotnet test tests/MySubscriptionService.UnitTests/MySubscriptionService.UnitTests.csproj `
-            --configuration ${{ env.BUILD_CONFIGURATION }} `
-            --no-restore `
-            --collect:"XPlat Code Coverage" `
+          dotnet test tests/MySubscriptionService.UnitTests/MySubscriptionService.UnitTests.csproj \
+            --configuration ${{ env.BUILD_CONFIGURATION }} \
+            --no-restore \
+            --collect:"XPlat Code Coverage" \
             --results-directory "${{ runner.temp }}/coverage/unit"
 
       - name: Upload Unit Test Coverage
@@ -169,10 +169,10 @@ jobs:
 
       - name: Run Integration Tests with Coverage
         run: |
-          dotnet test tests/MySubscriptionService.IntegrationTests/MySubscriptionService.IntegrationTests.csproj `
-            --configuration ${{ env.BUILD_CONFIGURATION }} `
-            --no-restore `
-            --collect:"XPlat Code Coverage" `
+          dotnet test tests/MySubscriptionService.IntegrationTests/MySubscriptionService.IntegrationTests.csproj \
+            --configuration ${{ env.BUILD_CONFIGURATION }} \
+            --no-restore \
+            --collect:"XPlat Code Coverage" \
             --results-directory "${{ runner.temp }}/coverage/integration"
 
       - name: Upload Integration Test Coverage
@@ -201,9 +201,9 @@ jobs:
 
       - name: Generate Merged Coverage Report
         run: |
-          reportgenerator `
-            -reports:"${{ runner.temp }}/coverage/**/coverage.cobertura.xml" `
-            -targetdir:"${{ runner.temp }}/coverage-report" `
+          reportgenerator \
+            -reports:"${{ runner.temp }}/coverage/**/coverage.cobertura.xml" \
+            -targetdir:"${{ runner.temp }}/coverage-report" \
             -reporttypes:"Html;MarkdownSummary"
 
       - name: Upload Coverage Report
@@ -241,12 +241,12 @@ jobs:
       - name: Begin SonarCloud Scan
         run: |
           dotnet tool install --global dotnet-sonarscanner
-          dotnet sonarscanner begin `
-            /k:"mycompany_my-subscription-service" `
-            /o:"mycompany" `
-            /d:sonar.token="${{ secrets.SONAR_TOKEN }}" `
-            /d:sonar.cs.opencover.reportsPaths="${{ runner.temp }}/coverage/**/coverage.opencover.xml" `
-            /d:sonar.qualitygate.wait=true  # ← Blocks pipeline if quality fails
+          dotnet sonarscanner begin \
+            /k:"mycompany_my-subscription-service" \
+            /o:"mycompany" \
+            /d:sonar.token="${{ secrets.SONAR_TOKEN }}" \
+            /d:sonar.cs.opencover.reportsPaths="${{ runner.temp }}/coverage/**/coverage.opencover.xml" \
+            /d:sonar.qualitygate.wait=true
 
       - name: Build for Sonar
         run: dotnet build src/MySubscriptionService.sln --configuration ${{ env.BUILD_CONFIGURATION }}
@@ -268,8 +268,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews `
-            --field event=APPROVE `
+          gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews \
+            --field event=APPROVE \
             --field body="✅ Unit tests passed. Auto-approved."
 
   # ── JOB 8: Docker & NuGet Publish (push only) ──────────────
