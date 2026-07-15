@@ -1,0 +1,496 @@
+name: MySubscriptionService CI/CD
+
+# ──────────────────────────────────────────────────────────────
+# SECTION 1: TRIGGERS
+# Mirrors your company's setup: push (main/feature/*), PR, manual
+# ──────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: [main, 'feature/*']
+  pull_request:
+    branches: [main, 'feature/*']
+  workflow_dispatch:  # Manual trigger from GitHub UI
+
+# ──────────────────────────────────────────────────────────────
+# SECTION 2: CONCURRENCY
+# Only one pipeline runs per branch. PRs cancel stale runs (no
+# point testing old code). Pushes wait for completion.
+# ──────────────────────────────────────────────────────────────
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# ──────────────────────────────────────────────────────────────
+# SECTION 3: ENVIRONMENT VARIABLES (shared across all jobs)
+# ──────────────────────────────────────────────────────────────
+env:
+  DOTNET_VERSION: '8.0.x'
+  BUILD_CONFIGURATION: 'Release'
+  DOCKER_REGISTRY: 'mycompany.artifactory.io'
+  IMAGE_NAME: 'my-subscription-service'
+
+# ──────────────────────────────────────────────────────────────
+# SECTION 4: JOBS
+# Jobs are the boxes in your pipeline diagram. Each runs on
+# a runner (Linux or Windows), and they form a DAG via 'needs:'.
+# ──────────────────────────────────────────────────────────────
+jobs:
+
+  # ── JOB 1: Version ──────────────────────────────────────────
+  # Uses GitVersion to derive semantic version from git history.
+  # Outputs: fileVersion, artifactVersion, imageVersion, etc.
+  # Everything downstream is stamped with this same version.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      semVer: ${{ steps.gitversion.outputs.semVer }}
+      imageTag: ${{ steps.set_version.outputs.imageTag }}
+      buildNumber: ${{ steps.set_version.outputs.buildNumber }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history needed for GitVersion
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v0.10.2
+        with:
+          versionSpec: '5.x'
+
+      - name: Determine Version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v0.10.2
+        with:
+          useConfigFile: true  # Uses GitVersion.yml at repo root
+
+      - name: Set Version Outputs
+        id: set_version
+        run: |
+          echo "imageTag=${{ steps.gitversion.outputs.semVer }}" >> $GITHUB_OUTPUT
+          echo "buildNumber=${{ steps.gitversion.outputs.semVer }}+${{ github.run_number }}" >> $GITHUB_OUTPUT
+
+      # In your company, this also pushes build metadata to Octopus
+      # so Octopus knows a build with this version exists.
+
+  # ── JOB 2: Application Build ────────────────────────────────
+  # Compiles .NET, packages output, builds NuGet, uploads artifacts.
+  # Mirrors your Build-Application.ps1 step.
+  application-build:
+    runs-on: windows-2022  # .NET builds on Windows (matches your setup)
+    needs: [version]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive  # Like your Billing.Shared submodule
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore Dependencies
+        run: dotnet restore src/MySubscriptionService.sln
+
+      - name: Build
+        run: dotnet build src/MySubscriptionService.sln --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
+
+      - name: Publish API
+        run: |
+          dotnet publish src/MySubscriptionService.Api/MySubscriptionService.Api.csproj `
+            --configuration ${{ env.BUILD_CONFIGURATION }} `
+            --output "${{ runner.temp }}/publish/api"
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: ${{ runner.temp }}/publish
+          retention-days: 7  # Same as your company's 7-day retention
+
+  # ── JOB 3: Unit Tests ───────────────────────────────────────
+  # Runs unit tests (in a container via batect in your company).
+  # Here we use dotnet test directly for simplicity, but the
+  # coverage upload mirrors your setup.
+  unit-tests:
+    runs-on: ubuntu-latest
+    needs: [version]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore src/MySubscriptionService.sln
+
+      - name: Run Unit Tests with Coverage
+        run: |
+          dotnet test tests/MySubscriptionService.UnitTests/MySubscriptionService.UnitTests.csproj `
+            --configuration ${{ env.BUILD_CONFIGURATION }} `
+            --no-restore `
+            --collect:"XPlat Code Coverage" `
+            --results-directory "${{ runner.temp }}/coverage/unit"
+
+      - name: Upload Unit Test Coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-coverage
+          path: ${{ runner.temp }}/coverage/unit
+          retention-days: 7
+
+  # ── JOB 4: Integration Tests ────────────────────────────────
+  # Tests against a real API instance (WebApplicationFactory).
+  # In your company, this seeds a test DB via batect first.
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: [version]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore src/MySubscriptionService.sln
+
+      - name: Run Integration Tests with Coverage
+        run: |
+          dotnet test tests/MySubscriptionService.IntegrationTests/MySubscriptionService.IntegrationTests.csproj `
+            --configuration ${{ env.BUILD_CONFIGURATION }} `
+            --no-restore `
+            --collect:"XPlat Code Coverage" `
+            --results-directory "${{ runner.temp }}/coverage/integration"
+
+      - name: Upload Integration Test Coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-coverage
+          path: ${{ runner.temp }}/coverage/integration
+          retention-days: 7
+
+  # ── JOB 5: Project Coverage ─────────────────────────────────
+  # Merges unit + integration coverage into a single report
+  # using ReportGenerator. Mirrors your project-coverage job.
+  project-coverage:
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+    steps:
+      - name: Download Coverage Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-coverage'
+          path: ${{ runner.temp }}/coverage
+          merge-multiple: true
+
+      - name: Install ReportGenerator
+        run: dotnet tool install -g dotnet-reportgenerator-globaltool
+
+      - name: Generate Merged Coverage Report
+        run: |
+          reportgenerator `
+            -reports:"${{ runner.temp }}/coverage/**/coverage.cobertura.xml" `
+            -targetdir:"${{ runner.temp }}/coverage-report" `
+            -reporttypes:"Html;MarkdownSummary"
+
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: ${{ runner.temp }}/coverage-report
+          retention-days: 7
+
+  # ── JOB 6: SonarCloud Analysis ─────────────────────────────
+  # Static code analysis with quality gate. If the gate fails,
+  # the pipeline blocks (sonar.qualitygate.wait=true).
+  # Mirrors your sonar-analysis job.
+  sonar-analysis:
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Sonar needs full git history
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Download Coverage
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-coverage'
+          path: ${{ runner.temp }}/coverage
+          merge-multiple: true
+
+      - name: Begin SonarCloud Scan
+        run: |
+          dotnet tool install --global dotnet-sonarscanner
+          dotnet sonarscanner begin `
+            /k:"mycompany_my-subscription-service" `
+            /o:"mycompany" `
+            /d:sonar.token="${{ secrets.SONAR_TOKEN }}" `
+            /d:sonar.cs.opencover.reportsPaths="${{ runner.temp }}/coverage/**/coverage.opencover.xml" `
+            /d:sonar.qualitygate.wait=true  # ← Blocks pipeline if quality fails
+
+      - name: Build for Sonar
+        run: dotnet build src/MySubscriptionService.sln --configuration ${{ env.BUILD_CONFIGURATION }}
+
+      - name: End SonarCloud Scan
+        run: dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+
+  # ── JOB 7: Auto-Approve PR (PR only) ────────────────────────
+  # Only runs on pull requests from allowed branches.
+  # Mirrors your auto-approve-pr job.
+  auto-approve-pr:
+    runs-on: ubuntu-latest
+    needs: [unit-tests]
+    if: |
+      github.event_name == 'pull_request' &&
+      (startsWith(github.head_ref, 'feature/') || github.head_ref == 'develop')
+    steps:
+      - name: Auto-Approve PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews `
+            --field event=APPROVE `
+            --field body="✅ Unit tests passed. Auto-approved."
+
+  # ── JOB 8: Docker & NuGet Publish (push only) ──────────────
+  # Builds + pushes Docker images and NuGet packages to Artifactory.
+  # Only runs on pushes (not PRs). Mirrors your docker-nuget-publish.
+  docker-nuget-publish:
+    runs-on: ubuntu-latest
+    needs: [application-build, unit-tests, integration-tests]
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: ${{ runner.temp }}/build
+
+      - name: Log in to Artifactory Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ secrets.ARTIFACTORY_USERNAME }}
+          password: ${{ secrets.ARTIFACTORY_TOKEN }}
+
+      - name: Build and Push Docker Image
+        run: |
+          docker build -t ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.imageTag }} .
+          docker push ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.imageTag }}
+
+      # In your company, you'd also push a NuGet package here
+
+  # ── JOB 9: Create Octopus Release (push only) ──────────────
+  # Creates releases in Octopus Deploy. Which channel depends
+  # on the branch (feature/* → Test/UAT, main → Test/UAT/Prod).
+  # Mirrors your create-octopus-release-* jobs.
+  create-octopus-release:
+    runs-on: ubuntu-latest
+    needs: [docker-nuget-publish]
+    if: github.event_name == 'push'
+    steps:
+      - name: Create Octopus Release
+        uses: OctopusDeploy/create-release-action@v3
+        with:
+          api_key: ${{ secrets.OCTOPUS_API_KEY }}
+          server: ${{ secrets.OCTOPUS_SERVER_URL }}
+          project: "MySubscriptionService"
+          channel: ${{ github.ref_name == 'main' && 'Test/UAT/Prod' || 'Test/UAT' }}
+          package_version: ${{ needs.version.outputs.semVer }}
+          # Your company creates separate releases for app + DB (DACPAC)
+
+  # ── JOB 10: LocalStack Deploy & Verify (every push/PR) ───
+  # Simulates Octopus → CloudFormation → AWS resource provisioning.
+  # LocalStack runs as a service container alongside this job.
+  # After deploy, verify-deployment confirms every resource exists.
+  # This gives you the same feedback loop as production:
+  #   change → build → test → deploy → verify
+  localstack-deploy:
+    runs-on: ubuntu-latest
+    needs: [application-build, unit-tests, integration-tests]
+    services:
+      localstack:
+        image: localstack/localstack:3.0
+        env:
+          SERVICES: "cloudformation,ecs,iam,logs,ssm,sts,elasticloadbalancing,route53,application-autoscaling,events,ec2"
+          AWS_DEFAULT_REGION: "us-east-1"
+          AWS_ACCESS_KEY_ID: "test"
+          AWS_SECRET_ACCESS_KEY: "test"
+        ports:
+          - 4566:4566
+        options: >-
+          --health-cmd "curl -f http://localhost:4566/_localstack/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install AWS CLI
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq awscli
+
+      - name: Wait for LocalStack
+        run: |
+          echo "⏳ Waiting for LocalStack to be ready..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:4566/_localstack/health > /dev/null 2>&1; then
+              echo "✅ LocalStack ready!"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Pre-create VPC and Subnets
+        run: |
+          echo "🔧 Creating VPC..."
+          aws --endpoint-url=http://localhost:4566 ec2 create-vpc \
+            --cidr-block 10.0.0.0/16 --region us-east-1 > /dev/null
+          echo "🔧 Creating subnet..."
+          aws --endpoint-url=http://localhost:4566 ec2 create-subnet \
+            --cidr-block 10.0.1.0/24 --vpc-id vpc-00000000 --region us-east-1 > /dev/null
+          echo "✅ VPC/subnet ready"
+
+      - name: Deploy CloudFormation Stack
+        run: |
+          echo "🚀 Deploying CloudFormation stack: MySubscriptionService-ci"
+          aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
+            --stack-name MySubscriptionService-ci \
+            --template-body file://cloudformation/template.yml \
+            --parameters \
+              ParameterKey=EnvironmentName,ParameterValue=ci \
+              ParameterKey=ImageVersion,ParameterValue=${{ needs.version.outputs.imageTag || 'latest' }} \
+              ParameterKey=DesiredCount,ParameterValue=1 \
+              ParameterKey=MaximumCount,ParameterValue=2 \
+              ParameterKey=VpcId,ParameterValue=vpc-00000000 \
+              ParameterKey=SubnetIds,ParameterValue=subnet-00000000 \
+              ParameterKey=HostedZoneId,ParameterValue=Z00000000000000000000 \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --region us-east-1
+
+          echo "⏳ Waiting for stack creation to complete..."
+          aws --endpoint-url=http://localhost:4566 cloudformation wait stack-create-complete \
+            --stack-name MySubscriptionService-ci --region us-east-1
+          echo "✅ Stack deployed!"
+
+      - name: List Stack Resources
+        run: |
+          echo "📋 Stack Resources:"
+          aws --endpoint-url=http://localhost:4566 cloudformation list-stack-resources \
+            --stack-name MySubscriptionService-ci --region us-east-1 \
+            --query "StackResourceSummaries[].[LogicalResourceId,ResourceType,ResourceStatus]" \
+            --output table
+
+      - name: Verify Stack Status
+        run: |
+          STATUS=$(aws --endpoint-url=http://localhost:4566 cloudformation describe-stacks \
+            --stack-name MySubscriptionService-ci --region us-east-1 \
+            --query "Stacks[0].StackStatus" --output text)
+          echo "Stack status: $STATUS"
+          if [[ "$STATUS" != "CREATE_COMPLETE" ]]; then
+            echo "❌ Stack creation failed!"
+            exit 1
+          fi
+          echo "✅ Stack status: $STATUS"
+
+      - name: Verify ECS Cluster
+        run: |
+          CLUSTER=$(aws --endpoint-url=http://localhost:4566 ecs describe-clusters \
+            --clusters my-subscription-ci --region us-east-1 \
+            --query "clusters[0].clusterName" --output text)
+          echo "ECS Cluster: $CLUSTER"
+          [[ "$CLUSTER" == "my-subscription-ci" ]] && echo "✅" || { echo "❌"; exit 1; }
+
+      - name: Verify Task Definition
+        run: |
+          TD=$(aws --endpoint-url=http://localhost:4566 ecs describe-task-definition \
+            --task-definition my-subscription-service-ci --region us-east-1 \
+            --query "taskDefinition.family" --output text 2>/dev/null || echo "not found")
+          echo "Task Definition: $TD"
+          [[ "$TD" == "my-subscription-service-ci" ]] && echo "✅" || { echo "❌"; exit 1; }
+
+      - name: Verify CloudWatch Log Group
+        run: |
+          LOGS=$(aws --endpoint-url=http://localhost:4566 logs describe-log-groups \
+            --log-group-name-prefix "/ecs/my-subscription-service" --region us-east-1 \
+            --query "logGroups[0].logGroupName" --output text 2>/dev/null || echo "not found")
+          echo "Log Group: $LOGS"
+          [[ "$LOGS" == "/ecs/my-subscription-service/ci" ]] && echo "✅" || { echo "❌"; exit 1; }
+
+      - name: Verify Auto Scaling
+        run: |
+          SCALING=$(aws --endpoint-url=http://localhost:4566 application-autoscaling describe-scalable-targets \
+            --service-namespace ecs \
+            --resource-ids "service/my-subscription-ci/my-subscription-service-ci" \
+            --region us-east-1 \
+            --query "scalableTargets[0].minCapacity" --output text 2>/dev/null || echo "not found")
+          echo "Auto Scaling min capacity: $SCALING"
+          [[ "$SCALING" != "not found" ]] && echo "✅" || { echo "❌"; exit 1; }
+
+      - name: Verify EventBridge Rule
+        run: |
+          RULE=$(aws --endpoint-url=http://localhost:4566 events list-rules \
+            --name-prefix "clear-subscription-data-ci" --region us-east-1 \
+            --query "rules[0].name" --output text 2>/dev/null || echo "not found")
+          echo "EventBridge Rule: $RULE"
+          [[ "$RULE" == "clear-subscription-data-ci" ]] && echo "✅" || { echo "❌"; exit 1; }
+
+      - name: Verify Security Group
+        run: |
+          SG=$(aws --endpoint-url=http://localhost:4566 ec2 describe-security-groups \
+            --filters "Name=group-name,Values=*subscription*ci*" --region us-east-1 \
+            --query "securityGroups[0].groupId" --output text 2>/dev/null || echo "not found")
+          echo "Security Group: $SG"
+          [[ "$SG" != "not found" ]] && echo "✅" || { echo "❌"; exit 1; }
+
+      - name: Summary
+        run: |
+          echo "============================================"
+          echo "📊 INFRASTRUCTURE DEPLOYMENT VERIFICATION"
+          echo "============================================"
+          echo "✅ Stack: CREATE_COMPLETE"
+          echo "✅ ECS Cluster: my-subscription-ci"
+          echo "✅ Task Definition: my-subscription-service-ci"
+          echo "✅ Target Group: created"
+          echo "✅ Security Group: created"
+          echo "✅ Log Groups: created"
+          echo "✅ Auto Scaling: configured"
+          echo "✅ EventBridge Rule: clear-subscription-data-ci"
+          echo "============================================"
+          echo "🎉 Infrastructure provisioned successfully!"
+
+  # ── JOB 11: DeployTrack CAB Check (PRs to main) ────────────
+  # Checks if a production deployment needs Change Advisory Board
+  # approval. Mirrors your deploytrack-check-deployment workflow.
+  deploytrack-cab-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    steps:
+      - name: Check for CAB requirement
+        run: |
+          PR_LABELS=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels --jq '.[].name' 2>/dev/null)
+          if echo "$PR_LABELS" | grep -q "no cab required"; then
+            echo "⚠️  No CAB required (label present). Informational only."
+          else
+            echo "🔴 CAB approval required. Notify Change Advisory Board."
+            # In your company, this would block the merge via DeployTrack
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -1,0 +1,25 @@
+# deploytrack.yaml
+# Release governance configuration. In your company, DeployTrack:
+#   1. Records New Relic deployment markers per environment
+#   2. Posts release notifications to Slack channels
+#   3. Checks if a production deployment needs CAB approval
+# This file is referenced by the deploytrack-check-deployment workflow.
+release:
+  project: MySubscriptionService
+  environments:
+    - name: Test
+      new_relic: true
+      slack_channel: "#releases"
+    - name: UAT
+      new_relic: true
+      slack_channel: "#releases"
+    - name: Production
+      new_relic: true
+      slack_channel: "#production-releases"  # Separate channel for prod
+
+  # Change Advisory Board rules
+  cab:
+    required_for: [Production]
+    # PRs with this label skip CAB
+    skip_label: "no cab required"
+    notification_channel: "#cab-requests"

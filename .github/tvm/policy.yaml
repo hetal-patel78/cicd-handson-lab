@@ -1,0 +1,19 @@
+# Token Vending Machine (TVM) Policy
+# TVM issues short-lived tokens so CI/CD can securely access
+# private resources (submodules, Artifactory, etc.).
+# The policy defines WHICH issuers (GitHub Actions, Octopus, TeamCity)
+# and which component UUIDs may mint tokens, plus the granted permissions.
+# In your company, this controls who can pull Billing.Shared submodule
+# and push to Artifactory.
+issuers:
+  - name: github-actions
+    allowed_actions:
+      - "checkout"
+      - "push"
+    component_uuids:
+      - "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"  # MySubscriptionService
+  - name: octopus-deploy
+    allowed_actions:
+      - "deploy"
+    component_uuids:
+      - "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
