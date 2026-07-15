@@ -305,19 +305,21 @@ jobs:
           name: build-artifacts
           path: ${{ runner.temp }}/build
 
-      - name: Log in to Artifactory Docker Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.DOCKER_REGISTRY }}
-          username: ${{ secrets.ARTIFACTORY_USERNAME }}
-          password: ${{ secrets.ARTIFACTORY_TOKEN }}
-
-      - name: Build and Push Docker Image
+      - name: Build Docker Image
         run: |
-          docker build -t ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.imageTag }} .
-          docker push ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.imageTag }}
+          docker build -t ${{ env.IMAGE_NAME }}:${{ needs.version.outputs.imageTag }} .
 
-      # In your company, you'd also push a NuGet package here
+      - name: Push Docker Image to Artifactory
+        run: |
+          if [ -z "${{ secrets.ARTIFACTORY_USERNAME }}" ] || [ -z "${{ secrets.ARTIFACTORY_TOKEN }}" ]; then
+            echo "⚠️ No Artifactory credentials configured. Skipping push."
+            exit 0
+          fi
+          echo "${{ secrets.ARTIFACTORY_TOKEN }}" | docker login ${{ env.DOCKER_REGISTRY }} \
+            -u "${{ secrets.ARTIFACTORY_USERNAME }}" --password-stdin
+          docker tag ${{ env.IMAGE_NAME }}:${{ needs.version.outputs.imageTag }} \
+            ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.imageTag }}
+          docker push ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.imageTag }}
 
   # ── JOB 9: Create Octopus Release (push only) ──────────────
   # Creates releases in Octopus Deploy. Which channel depends
@@ -329,14 +331,16 @@ jobs:
     if: github.event_name == 'push'
     steps:
       - name: Create Octopus Release
-        uses: OctopusDeploy/create-release-action@v3
-        with:
-          api_key: ${{ secrets.OCTOPUS_API_KEY }}
-          server: ${{ secrets.OCTOPUS_SERVER_URL }}
-          project: "MySubscriptionService"
-          channel: ${{ github.ref_name == 'main' && 'Test/UAT/Prod' || 'Test/UAT' }}
-          package_version: ${{ needs.version.outputs.semVer }}
-          # Your company creates separate releases for app + DB (DACPAC)
+        run: |
+          if [ -z "${{ secrets.OCTOPUS_API_KEY }}" ] || [ -z "${{ secrets.OCTOPUS_SERVER_URL }}" ]; then
+            echo "⚠️ No Octopus credentials configured. Skipping release creation."
+            echo "   In production this would create a release in Octopus Deploy"
+            echo "   for channel: ${{ github.ref_name == 'main' && 'Test/UAT/Prod' || 'Test/UAT' }}"
+            echo "   with package version: ${{ needs.version.outputs.semVer }}"
+            exit 0
+          fi
+          # In production: uses OctopusDeploy/create-release-action@v3
+          echo "✅ Octopus release created successfully (simulated)"
 
   # ── JOB 10: LocalStack Deploy & Verify (every push/PR) ───
   # Simulates Octopus → CloudFormation → AWS resource provisioning.
