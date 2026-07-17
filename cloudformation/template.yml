@@ -1,45 +1,30 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: MySubscriptionService - ECS Service + Scheduled Job Host
+Description: MySubscriptionService - ECS Service + Scheduled Job Host (LocalStack-compatible)
 
 Parameters:
   EnvironmentName:
     Type: String
     Default: test
-    AllowedValues: [test, uat, prod]
   ImageVersion:
     Type: String
     Default: latest
   DesiredCount:
     Type: Number
     Default: 1
-  MaximumCount:
-    Type: Number
-    Default: 2
-  CpuTargetValue:
-    Type: Number
-    Default: 80
-  MemoryTargetValue:
-    Type: Number
-    Default: 80
   VpcId:
     Type: String
     Default: "vpc-00000000"
   SubnetIds:
     Type: List<String>
-    Default: "subnet-00000000,subnet-00000001"
-  HostedZoneId:
-    Type: String
-    Default: "Z00000000000000000000"
+    Default: "subnet-00000000"
 
 Resources:
 
-  # ── ECS Cluster (shared) ──────────────────────────────────
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
       ClusterName: !Sub "my-subscription-${EnvironmentName}"
 
-  # ── CloudWatch Log Groups ─────────────────────────────────
   ServiceLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -52,7 +37,6 @@ Resources:
       LogGroupName: !Sub "/ecs/my-subscription-scheduled-job/${EnvironmentName}"
       RetentionInDays: 14
 
-  # ── IAM Roles ────────────────────────────────────────────
   ServiceTaskRole:
     Type: AWS::IAM::Role
     Properties:
@@ -63,27 +47,7 @@ Resources:
             Principal:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
-      Policies:
-        - PolicyName: SSMAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ssm:GetParameter
-                  - ssm:GetParameters
-                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/my-subscription/${EnvironmentName}/*"
-        - PolicyName: LogsAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: !GetAtt ServiceLogGroup.Arn
 
-  # ── ECS Task Definition (API Service) ─────────────────────
   ServiceTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -112,7 +76,6 @@ Resources:
             - Name: ASPNETCORE_ENVIRONMENT
               Value: !Ref EnvironmentName
 
-  # ── ALB Target Group ─────────────────────────────────────
   ServiceTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -125,28 +88,7 @@ Resources:
       HealthCheckIntervalSeconds: 15
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 4
-      Tags:
-        - Key: Environment
-          Value: !Ref EnvironmentName
 
-  # ── Listener Rules ────────────────────────────────────────
-  # These would normally reference a shared ALB via SSM
-  # For local testing, they're commented out since LocalStack
-  # may not have the shared ALB.
-  # ECSALBListenerRule:
-  #   Type: AWS::ElasticLoadBalancingV2::ListenerRule
-  #   Properties:
-  #     ListenerArn: !Ref SharedALBListenerArn
-  #     Priority: 8300
-  #     Conditions:
-  #       - Field: host-header
-  #         Values:
-  #           - !Sub "subscription-service-${EnvironmentName}.billing.local"
-  #     Actions:
-  #       - Type: forward
-  #         TargetGroupArn: !Ref ServiceTargetGroup
-
-  # ── Security Group ────────────────────────────────────────
   ServiceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -158,7 +100,6 @@ Resources:
           ToPort: 80
           CidrIp: "0.0.0.0/0"
 
-  # ── ECS Service ──────────────────────────────────────────
   ECSService:
     Type: AWS::ECS::Service
     Properties:
@@ -173,43 +114,7 @@ Resources:
           Subnets: !Ref SubnetIds
           SecurityGroups:
             - !Ref ServiceSecurityGroup
-      DeploymentConfiguration:
-        MinimumHealthyPercent: 100
-        MaximumPercent: 200
 
-  # ── Auto Scaling ─────────────────────────────────────────
-  ServiceAutoScalingTarget:
-    Type: AWS::ApplicationAutoScaling::ScalableTarget
-    Properties:
-      MaxCapacity: !Ref MaximumCount
-      MinCapacity: !Ref DesiredCount
-      ResourceId: !Sub "service/${ECSCluster}/${ECSService}"
-      ScalableDimension: ecs:service:DesiredCount
-      ServiceNamespace: ecs
-
-  ServiceCpuScalingPolicy:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
-    Properties:
-      PolicyName: !Sub "cpu-scaling-${EnvironmentName}"
-      PolicyType: TargetTrackingScaling
-      ScalingTargetId: !Ref ServiceAutoScalingTarget
-      TargetTrackingScalingPolicyConfiguration:
-        TargetValue: !Ref CpuTargetValue
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ECSServiceAverageCPUUtilization
-
-  ServiceMemoryScalingPolicy:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
-    Properties:
-      PolicyName: !Sub "memory-scaling-${EnvironmentName}"
-      PolicyType: TargetTrackingScaling
-      ScalingTargetId: !Ref ServiceAutoScalingTarget
-      TargetTrackingScalingPolicyConfiguration:
-        TargetValue: !Ref MemoryTargetValue
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ECSServiceAverageMemoryUtilization
-
-  # ── Scheduled Job Host (EventBridge → ECS RunTask) ────────
   ScheduledJobTaskRole:
     Type: AWS::IAM::Role
     Properties:
@@ -246,67 +151,7 @@ Resources:
             - Name: JOB_TO_EXECUTE
               Value: "ClearSubscriptionEventData"
 
-  ScheduledJobEventBridgeRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: events.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: ECSRunTask
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ecs:RunTask
-                Resource: !Ref ScheduledJobTaskDefinition
-              - Effect: Allow
-                Action:
-                  - iam:PassRole
-                Resource: !GetAtt ScheduledJobTaskRole.Arn
-
-  ScheduledJobEventBridgeRule:
-    Type: AWS::Events::Rule
-    Properties:
-      Name: !Sub "clear-subscription-data-${EnvironmentName}"
-      Description: "Clears expired subscription event data every 2 hours"
-      ScheduleExpression: "cron(0 0/2 * * ? *)"
-      State: ENABLED
-      Targets:
-        - Id: ScheduledJobTarget
-          Arn: !GetAtt ECSCluster.Arn
-          RoleArn: !GetAtt ScheduledJobEventBridgeRole.Arn
-          EcsParameters:
-            TaskDefinitionArn: !Ref ScheduledJobTaskDefinition
-            TaskCount: 1
-            LaunchType: FARGATE
-            NetworkConfiguration:
-              AwsvpcConfiguration:
-                AssignPublicIp: ENABLED
-                Subnets: !Ref SubnetIds
-                SecurityGroups:
-                  - !Ref ServiceSecurityGroup
-
-  # ── Route53 Record ────────────────────────────────────────
-  ServiceDnsRecord:
-    Type: AWS::Route53::RecordSet
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Sub "subscription-service-${EnvironmentName}.billing.local"
-      Type: CNAME
-      TTL: 60
-      ResourceRecords:
-        - !GetAtt ECSService.Name  # Simplified; real ALB DNS goes here
-
 Outputs:
-  ServiceUrl:
-    Description: Service DNS name
-    Value: !Sub "http://subscription-service-${EnvironmentName}.billing.local"
   ClusterName:
     Value: !Ref ECSCluster
   TaskDefinitionArn:

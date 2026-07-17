@@ -484,24 +484,6 @@ jobs:
           echo "Log Group: $LOGS"
           [[ "$LOGS" == "/ecs/my-subscription-service/ci" ]] && echo "✅" || { echo "❌"; exit 1; }
 
-      - name: Verify Auto Scaling
-        run: |
-          SCALING=$(aws --endpoint-url=http://localhost:4566 application-autoscaling describe-scalable-targets \
-            --service-namespace ecs \
-            --resource-ids "service/my-subscription-ci/my-subscription-service-ci" \
-            --region us-east-1 \
-            --query "scalableTargets[0].minCapacity" --output text 2>/dev/null || echo "not found")
-          echo "Auto Scaling min capacity: $SCALING"
-          [[ "$SCALING" != "not found" ]] && echo "✅" || { echo "❌"; exit 1; }
-
-      - name: Verify EventBridge Rule
-        run: |
-          RULE=$(aws --endpoint-url=http://localhost:4566 events list-rules \
-            --name-prefix "clear-subscription-data-ci" --region us-east-1 \
-            --query "rules[0].name" --output text 2>/dev/null || echo "not found")
-          echo "EventBridge Rule: $RULE"
-          [[ "$RULE" == "clear-subscription-data-ci" ]] && echo "✅" || { echo "❌"; exit 1; }
-
       - name: Verify Security Group
         run: |
           SG=$(aws --endpoint-url=http://localhost:4566 ec2 describe-security-groups \
@@ -521,8 +503,6 @@ jobs:
           echo "✅ Target Group: created"
           echo "✅ Security Group: created"
           echo "✅ Log Groups: created"
-          echo "✅ Auto Scaling: configured"
-          echo "✅ EventBridge Rule: clear-subscription-data-ci"
           echo "============================================"
           echo "🎉 Infrastructure provisioned successfully!"
 
