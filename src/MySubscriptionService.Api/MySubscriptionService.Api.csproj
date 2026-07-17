@@ -7,8 +7,5 @@
   <ItemGroup>
     <ProjectReference Include="..\MySubscriptionService.Core\MySubscriptionService.Core.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\MySubscriptionService.Core\MySubscriptionService.Core.csproj" />
-  </ItemGroup>
 </Project>
 
