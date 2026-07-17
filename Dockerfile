@@ -1,5 +1,3 @@
-# Multi-stage Docker build
-# Stage 1: Build the application
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 COPY src/MySubscriptionService.sln .
@@ -11,10 +9,9 @@ RUN dotnet publish MySubscriptionService.Api/MySubscriptionService.Api.csproj \
     --configuration Release \
     --output /app/publish
 
-# Stage 2: Create the runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
-EXPOSE 80
-ENV ASPNETCORE_URLS=http://+:80
+EXPOSE 5210
+ENV ASPNETCORE_URLS=http://+:5210
 ENTRYPOINT ["dotnet", "MySubscriptionService.Api.dll"]

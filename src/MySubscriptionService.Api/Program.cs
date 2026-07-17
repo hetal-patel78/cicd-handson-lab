@@ -9,7 +9,8 @@ var app = builder.Build();
 
 app.MapControllers();
 
-app.MapGet("/ping", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
+app.MapGet("/ping", () => Results.Ok(new { status = "alive" }));
+app.MapGet("/ready", () => Results.Ok(new { status = "ready" }));
 
 app.Run();
 
