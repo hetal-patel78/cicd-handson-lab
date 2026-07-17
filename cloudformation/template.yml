@@ -100,20 +100,8 @@ Resources:
           ToPort: 80
           CidrIp: "0.0.0.0/0"
 
-  ECSService:
-    Type: AWS::ECS::Service
-    Properties:
-      ServiceName: !Sub "my-subscription-service-${EnvironmentName}"
-      Cluster: !Ref ECSCluster
-      TaskDefinition: !Ref ServiceTaskDefinition
-      DesiredCount: !Ref DesiredCount
-      LaunchType: FARGATE
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          AssignPublicIp: ENABLED
-          Subnets: !Ref SubnetIds
-          SecurityGroups:
-            - !Ref ServiceSecurityGroup
+  # ECSService created via CLI after stack (LocalStack free doesn't handle ECS Service in CloudFormation)
+  # See localstack-deploy job in ci-cd-pipeline.yml
 
   ScheduledJobTaskRole:
     Type: AWS::IAM::Role

@@ -424,10 +424,8 @@ jobs:
               ParameterKey=EnvironmentName,ParameterValue=ci \
               ParameterKey=ImageVersion,ParameterValue=${{ needs.version.outputs.imageTag || 'latest' }} \
               ParameterKey=DesiredCount,ParameterValue=1 \
-              ParameterKey=MaximumCount,ParameterValue=2 \
               ParameterKey=VpcId,ParameterValue="$VPC_ID" \
               ParameterKey=SubnetIds,ParameterValue="$SUBNET_ID" \
-              ParameterKey=HostedZoneId,ParameterValue=Z00000000000000000000 \
             --capabilities CAPABILITY_NAMED_IAM \
             --region us-east-1
 
@@ -460,6 +458,20 @@ jobs:
           fi
           echo "✅ Stack status: $STATUS"
 
+      - name: Create ECS Service via CLI
+        run: |
+          echo "🚀 Creating ECS Service (via CLI — LocalStack CloudFormation limitation)..."
+          aws --endpoint-url=http://localhost:4566 ecs create-service \
+            --service-name my-subscription-service-ci \
+            --cluster my-subscription-ci \
+            --task-definition my-subscription-service-ci \
+            --desired-count 1 \
+            --launch-type FARGATE \
+            --network-configuration \
+              "awsvpcConfiguration={subnets=[$(cat /tmp/subnet_id.txt)],securityGroups=[$(aws --endpoint-url=http://localhost:4566 ec2 describe-security-groups --filters Name=group-name,Values=my-subscription*ci --region us-east-1 --query 'securityGroups[0].groupId' --output text)],assignPublicIp=ENABLED}" \
+            --region us-east-1
+          echo "✅ ECS Service created"
+
       - name: Verify ECS Cluster
         run: |
           CLUSTER=$(aws --endpoint-url=http://localhost:4566 ecs describe-clusters \
@@ -491,6 +503,14 @@ jobs:
             --query "securityGroups[0].groupId" --output text 2>/dev/null || echo "not found")
           echo "Security Group: $SG"
           [[ "$SG" != "not found" ]] && echo "✅" || { echo "❌"; exit 1; }
+
+      - name: Verify ECS Service
+        run: |
+          SERVICE=$(aws --endpoint-url=http://localhost:4566 ecs describe-services \
+            --cluster my-subscription-ci --services my-subscription-service-ci --region us-east-1 \
+            --query "services[0].serviceName" --output text 2>/dev/null || echo "not found")
+          echo "ECS Service: $SERVICE"
+          [[ "$SERVICE" == "my-subscription-service-ci" ]] && echo "✅" || { echo "❌"; exit 1; }
 
       - name: Summary
         run: |
