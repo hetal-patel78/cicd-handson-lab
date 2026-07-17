@@ -1,0 +1,19 @@
+# Production environment overrides
+environment: production
+
+hostname: my-subscription-service.global.xero.com
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 40
+  targetMemoryUtilizationPercentage: 40
+
+env:
+  - name: ASPNETCORE_ENVIRONMENT
+    value: Production
+  - name: DOTNET_ENVIRONMENT
+    value: Production
+
+iamRole: arn:aws:iam::000000000000:role/svc-exec-production-my-subscription-service

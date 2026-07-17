@@ -1,0 +1,19 @@
+# UAT environment overrides
+environment: uat
+
+hostname: my-subscription-service.global.xero-uat.com
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 60
+
+env:
+  - name: ASPNETCORE_ENVIRONMENT
+    value: UAT
+  - name: DOTNET_ENVIRONMENT
+    value: UAT
+
+iamRole: arn:aws:iam::000000000000:role/svc-exec-uat-my-subscription-service

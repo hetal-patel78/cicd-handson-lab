@@ -1,0 +1,19 @@
+# Test environment overrides
+environment: test
+
+hostname: my-subscription-service.global.xero-test.com
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: 75
+
+env:
+  - name: ASPNETCORE_ENVIRONMENT
+    value: Test
+  - name: DOTNET_ENVIRONMENT
+    value: Test
+
+iamRole: arn:aws:iam::000000000000:role/svc-exec-test-my-subscription-service
